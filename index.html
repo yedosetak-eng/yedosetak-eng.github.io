@@ -125,10 +125,10 @@
     background: var(--surface-sub);
     margin-bottom: 10px;
   }
-  .seg-cafe { width: 41%; background: var(--accent); }
-  .seg-personal { width: 29%; background: var(--amber); }
-  .seg-work { width: 24%; background: var(--blue); }
-  .seg-show { width: 6%; background: var(--purple); }
+  .seg-cafe { width: 25%; background: var(--accent); }
+  .seg-personal { width: 33%; background: var(--amber); }
+  .seg-work { width: 33%; background: var(--blue); }
+  .seg-show { width: 9%; background: var(--purple); }
   .bar-legend {
     display: flex;
     flex-wrap: wrap;
@@ -267,7 +267,7 @@
     <header>
       <div class="title-wrap">
         <h1>개인 현황판 대시보드</h1>
-<p class="subtitle">기준 동기화: 2026-11-22 00:52 KST · 비서 공용 브리핑(11-21 04:05 스냅샷) 연동</p>
+<p class="subtitle">기준 동기화: 2026-11-22 20:57 KST · 비서 공용 브리핑(11-22 14:00 스냅샷) 연동</p>
       </div>
       <label for="theme-toggle" class="theme-btn"></label>
     </header>
@@ -276,12 +276,12 @@
       <div class="kpi-card">
         <div class="kpi-label">윗치폼 일괄 정산 예정</div>
         <div class="kpi-val">630,000원</div>
-        <div class="kpi-sub">11/21 20:30 잔여 49건 거래종료 후 일괄 신청</div>
+        <div class="kpi-sub">11/24 21:00 (622,000원 전환 · 8,000원 재요청 후 일괄)</div>
       </div>
       <div class="kpi-card">
         <div class="kpi-label">생일카페 남은 작업</div>
-        <div class="kpi-val">7건</div>
-        <div class="kpi-sub">방명록 8명 · 협력진 10명 · 럭드 2명 발송 전</div>
+        <div class="kpi-val">3건</div>
+        <div class="kpi-sub">말랑·방명록·해시·협력진 완료 · 럭드·보틀·잔칰 대기</div>
       </div>
       <div class="kpi-card">
         <div class="kpi-label">현업 업무 목록</div>
@@ -297,8 +297,8 @@
 
     <section class="bar-card">
       <div class="bar-head">
-        <span>미완료·대기 항목 구성 (총 17건 기준)</span>
-        <span style="font-size:0.78rem;color:var(--text-muted);">생일카페 7 · 개인·체험단·정산 5 · 현업 4 · 구독 1</span>
+        <span>미완료·대기 항목 구성 (총 12건 기준)</span>
+        <span style="font-size:0.78rem;color:var(--text-muted);">현업 4 · 개인·체험단·정산 4 · 생일카페 3 · 구독 1</span>
       </div>
       <div class="bar-track">
         <div class="seg-cafe"></div>
@@ -307,10 +307,10 @@
         <div class="seg-show"></div>
       </div>
       <div class="bar-legend">
-        <span><i class="dot" style="background:var(--accent)"></i>생일카페 (7건)</span>
-        <span><i class="dot" style="background:var(--amber)"></i>개인·체험단·정산 (5건)</span>
+        <span><i class="dot" style="background:var(--accent)"></i>생일카페 (3건)</span>
+        <span><i class="dot" style="background:var(--amber)"></i>개인·체험단·정산 (4건)</span>
         <span><i class="dot" style="background:var(--blue)"></i>현업 미완료 (4건)</span>
-        <span><i class="dot" style="background:var(--purple)"></i>구독 환불 대기 (1건)</span>
+        <span><i class="dot" style="background:var(--purple)"></i>구독 전환 대기 (1건)</span>
       </div>
     </section>
 
@@ -334,24 +334,24 @@
           <div class="section-title">오늘·임박 주요 일정 (2026-11-22 기준)</div>
           <div class="group-row">
             <div>
-              <strong>동행복권 주간 당첨 확인</strong>
-              <div class="row-meta">오늘(일) 10:00 로또·연금 당첨 확인 예정</div>
+              <strong>윗치폼 전액 일괄 정산 신청</strong>
+              <div class="row-meta">11/24(화) 21:00 · 622,000원 전환 + 8,000원 재요청 후 630,000원 일괄</div>
             </div>
-            <span class="badge b-run">오늘 예정</span>
+            <span class="badge b-wait">11/24 예정</span>
           </div>
           <div class="group-row">
             <div>
-              <strong>무신사 체험단 신청 가능 리스트 보고</strong>
-              <div class="row-meta">매일 11:00 리스트 보고 (11/24 14:00 당첨·제세공과금 확인 예정)</div>
+              <strong>무신사 체험단 당첨·제세공과금 확인</strong>
+              <div class="row-meta">11/24(화) 14:00 예정 (매일 11:00 신청 가능 리스트 보고)</div>
             </div>
-            <span class="badge b-run">정기</span>
+            <span class="badge b-run">정기·예정</span>
           </div>
           <div class="group-row">
             <div>
-              <strong>윗치폼 정산 후속 확인</strong>
-              <div class="row-meta">11/21 20:30 일괄 정산(630,000원) 신청 예정분 확인</div>
+              <strong>생일카페 잔여 작업 (3건)</strong>
+              <div class="row-meta">럭드 코롯토(GS25 1256-0500-501 예약 완료) · 보틀님 발송 · 잔칰님 티셔츠</div>
             </div>
-            <span class="badge b-wait">확인 필요</span>
+            <span class="badge b-wait">미완료</span>
           </div>
           <div class="group-row">
             <div>
@@ -384,7 +384,7 @@
             <li class="check-item"><input type="checkbox" checked><span>배츄 님 치이카와 미니 초롱 마그넷 5,900원 입금 확인</span></li>
             <li class="check-item"><input type="checkbox" checked><span>금요일 고기값 정산 268,300원 (11/19 정산 완료)</span></li>
             <li class="check-item"><input type="checkbox"><span>소영 님 일본 구매 물품(파스·페르소나 인형 1개) 정산 안내</span></li>
-            <li class="check-item"><input type="checkbox"><span>라즈님 루이인형 반택 발송 (1,320엔 · GS25 장유율하초교점)</span></li>
+            <li class="check-item"><input type="checkbox" checked><span>라즈님 루이인형 반택 발송 (1,320엔 · GS25 장유율하초교점 완료)</span></li>
             <li class="check-item"><input type="checkbox"><span>12/5 홍대 모임 준비물: 박재서 줄 토벌봉 · 메구미 인형</span></li>
           </ul>
         </div>
@@ -424,13 +424,13 @@
 
       <div class="panel panel-cafe">
         <div class="section-card">
-          <div class="section-title">적색궤도 관측회 · 남은 작업 (7건)</div>
+          <div class="section-title">적색궤도 관측회 · 작업 현황 (완료 4 / 남은 작업 3)</div>
           <ul class="checklist">
-            <li class="check-item"><input type="checkbox"><span>말랑뱃지 택배 부치기 (11/20)</span></li>
-            <li class="check-item"><input type="checkbox"><span>방명록 이벤트 상품 발송 (8명 · GS25 국내택배 일괄 예약)</span></li>
-            <li class="check-item"><input type="checkbox"><span>해시태그 이벤트 추첨</span></li>
-            <li class="check-item"><input type="checkbox"><span>협력진 선물 발송 (10명 · 우체국택배 11/20 수거 예정)</span></li>
-            <li class="check-item"><input type="checkbox"><span>럭드 코롯토 배송 (2명 · 역샤 1명 / 크와 1명)</span></li>
+            <li class="check-item"><input type="checkbox" checked><span>말랑뱃지 택배 부치기 (11/20 완료)</span></li>
+            <li class="check-item"><input type="checkbox" checked><span>방명록 이벤트 상품 발송 (8명 완료)</span></li>
+            <li class="check-item"><input type="checkbox" checked><span>해시태그 이벤트 추첨 (완료)</span></li>
+            <li class="check-item"><input type="checkbox" checked><span>협력진 선물 발송 (10명 완료)</span></li>
+            <li class="check-item"><input type="checkbox"><span>럭드 코롯토 배송 (2명 · GS25 국내택배 예약 완료 1256-0500-501)</span></li>
             <li class="check-item"><input type="checkbox"><span>보틀님께 물건 발송</span></li>
             <li class="check-item"><input type="checkbox"><span>잔칰님 티셔츠 주문</span></li>
           </ul>
@@ -510,14 +510,14 @@
           <div class="group-row">
             <div>
               <strong>제미니 (에드와우 · 역습의 샤아)</strong>
-              <div class="row-meta">대시보드 HTML(00:50·07:50·14:50) · 반도체주(금 16:00) · 맞춤 공고/이력서 · 항공권 5대 지침 분석 · 성남사랑/온누리 상품권 정찰 · 구독 최적화 리서치 (키링에서 이관)</div>
+              <div class="row-meta">대시보드 HTML(00:50·07:50·14:50) · 반도체주(금 16:00) · 맞춤 공고/이력서 · 항공권 5대 지침 분석 · 성남사랑/온누리 상품권 정찰 · 구독 최적화 리서치</div>
             </div>
             <span class="badge b-run">가동 중</span>
           </div>
           <div class="group-row">
             <div>
               <strong>샤아 (피클 · 일년전쟁)</strong>
-              <div class="row-meta">구글 독스↔노션 동기화(02:00·14:00) · GitHub 배포(01·08·15시) · 구직 메일(일 5회) · 무신사 리스트 보고(11:00) · 정산/동행복권</div>
+              <div class="row-meta">구글 독스↔노션 동기화(02:00·14:00) · GitHub 배포(01·08·15시) · 구직 메일(일 5회) · 무신사 리스트(11:00) · 쌀먹 자동사냥(12:30) · 정산/동행복권</div>
             </div>
             <span class="badge b-run">가동 중</span>
           </div>
