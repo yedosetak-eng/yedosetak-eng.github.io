@@ -7,6 +7,10 @@
  *  Apps Script 가 Gemini(gemini-2.5-flash)에 도구(Function Calling)를 붙여
  *  캘린더·할 일·시트·메일·노션을 실제로 확인한 답을 돌려줍니다.
  *
+ *  같은 웹 앱 주소를 텔레그램 봇의 웹훅으로도 씁니다. 텔레그램 업데이트가 오면
+ *  PIN 대신 TELEGRAM_CHAT_ID(허용된 본인 chat_id)로 신원을 확인하고, 같은
+ *  Gemini + 도구 루프의 답을 텔레그램 sendMessage 로 돌려줍니다.
+ *
  *  이 파일에는 어떤 비밀값도 들어 있지 않습니다. 모든 키는 스크립트 속성에 둡니다.
  *
  *  ---------------------------------------------------------------------------
@@ -23,6 +27,10 @@
  *       SHARED_SHEET_ID  (선택) 자주 쓰는 구글 시트 ID (read_sheet/append 기본값)
  *       NOTION_TOKEN     (선택) 노션 검색을 쓰려면 integration 토큰
  *       NOTION_VERSION   (선택) 기본 2022-06-28
+ *       TELEGRAM_BOT_TOKEN      (선택) @BotFather 토큰 — 텔레그램으로 쓰려면 필수
+ *       TELEGRAM_CHAT_ID        (선택) 답장을 허용할 chat_id. 쉼표로 여러 개 가능.
+ *                               비워 두면 봇에게 /myid 를 보내 본인 id를 확인한 뒤 등록
+ *       TELEGRAM_WEBHOOK_SECRET (선택·권장) 웹훅 위조 방지용 임의 문자열
  *  6) 편집기에서 setupCheck() 를 한 번 실행 → 실행 로그로 설정 상태 확인
  *     (처음 실행하면 권한 승인 창이 뜹니다. 캘린더·할 일·시트·메일 권한은
  *      각 도구가 실제로 필요로 하는 범위입니다.)
@@ -33,6 +41,17 @@
  *     → 배포 후 나오는 https://script.google.com/macros/s/.../exec 주소를
  *       assistant.html 설정 화면에 입력 (PIN과 함께)
  *  8) 코드를 고친 뒤에는 [배포 관리] → 연필 → 버전 "새 버전" 으로 다시 배포해야 반영됩니다.
+ *  9) (선택) 텔레그램 봇으로도 쓰기
+ *       a. 텔레그램에서 @BotFather → /newbot → 이름·아이디 정하면 토큰이 나옵니다.
+ *       b. 스크립트 속성 TELEGRAM_BOT_TOKEN 에 그 토큰을 넣고,
+ *          (권장) TELEGRAM_WEBHOOK_SECRET 에 아무 임의 문자열(20자 이상)을 넣습니다.
+ *       c. 위 7) 처럼 웹 앱을 "모든 사용자"로 배포한 뒤,
+ *          편집기 함수 선택에서 setTelegramWebhook() 를 한 번 실행합니다.
+ *       d. 봇에게 /myid 를 보내면 chat_id 가 오므로, 그 값을 TELEGRAM_CHAT_ID 에 넣고
+ *          다시 setTelegramWebhook() 는 필요 없습니다(속성만 저장하면 다음 메시지부터 적용).
+ *          sendTelegramTest() 로 연결을 확인할 수 있습니다.
+ *       · TELEGRAM_CHAT_ID 가 비어 있으면 AI 를 부르지 않고, /myid 와 등록 안내(자신의 chat_id)만
+ *         돌려줍니다. 목록에 없는 사람의 메시지에는 아무 응답도 하지 않습니다.
  *
  *  ---------------------------------------------------------------------------
  *  [보안 메모]
@@ -42,6 +61,13 @@
  *    따라서 결과 JSON 안에 ok / status 를 담고, 클라이언트가 그것으로 판단합니다.
  *  · 도구는 "조회"와 "추가"만 있습니다. 삭제·메일 발송 같은 되돌리기 어려운 동작은
  *    의도적으로 넣지 않았습니다.
+ *  · 텔레그램은 웹 앱 주소를 아는 사람이면 누구나 호출할 수 있으므로, chat_id 허용 목록이
+ *    신원 확인의 전부입니다. 목록에 없는 chat 에는 답도, 오류도 보내지 않습니다.
+ *    (목록이 비어 있을 때만 /myid·등록 안내로 그 사람 자신의 chat_id 를 돌려줍니다 — 비밀값 아님)
+ *  · TELEGRAM_WEBHOOK_SECRET 을 넣으면 Telegram 이 보내는
+ *    X-Telegram-Bot-Api-Secret-Token 헤더가 일치하지 않는 요청은 처리하지 않습니다.
+ *  · 같은 update_id 는 CacheService 로 한 번만 처리해, 웹훅 재전송 때 일정·할 일이
+ *    두 번 추가되는 일을 막습니다.
  * ============================================================================
  */
 
@@ -52,6 +78,12 @@ var GEMINI_ENDPOINT =
   'https://generativelanguage.googleapis.com/v1beta/models/' + GEMINI_MODEL + ':generateContent';
 var MAX_TOOL_ROUNDS = 5;
 var MAX_HISTORY = 20;
+
+var TG_API = 'https://api.telegram.org/bot';
+var TG_MAX_LEN = 4000;        // Telegram 상한 4096 — 여유를 둡니다.
+var TG_HISTORY_TURNS = 10;    // 기억할 최근 대화 턴 수(한 턴 = 사용자+비서 2개)
+var TG_HISTORY_TTL = 21600;   // 6시간
+var TG_KEEP_CHARS = 2000;     // 기억에 남길 답변 길이(캐시 용량 보호)
 
 /* ==========================================================================
  *  웹 앱 진입점
@@ -70,6 +102,18 @@ function doPost(e) {
       body = JSON.parse((e && e.postData && e.postData.contents) || '{}') || {};
     } catch (parseErr) {
       return jsonOut_({ ok: false, status: 400, error: '요청 본문이 JSON이 아닙니다.' });
+    }
+
+    // ── 텔레그램 웹훅 분기 ─────────────────────────────────────────
+    // 텔레그램은 응답 본문을 보지 않고 200 만 확인합니다(App Script 는 항상 200).
+    // PIN 대신 chat_id 허용 목록으로 인증하므로 PIN 검증보다 먼저 처리합니다.
+    if (isTelegramUpdate_(body)) {
+      try {
+        handleTelegramUpdate_(body, e);
+      } catch (tgErr) {
+        Logger.log('텔레그램 처리 오류: ' + errText_(tgErr));
+      }
+      return jsonOut_({ ok: true });
     }
 
     var expectedPin = PROPS.getProperty('ACCESS_PIN');
@@ -112,6 +156,352 @@ function safeEqual_(a, b) {
   var diff = 0;
   for (var i = 0; i < a.length; i++) diff |= a.charCodeAt(i) ^ b.charCodeAt(i);
   return diff === 0;
+}
+
+/* ==========================================================================
+ *  텔레그램 봇 웹훅
+ * ==========================================================================
+ *
+ *  [메시지 처리 흐름]
+ *   1) TELEGRAM_WEBHOOK_SECRET 이 있으면 X-Telegram-Bot-Api-Secret-Token 확인
+ *   2) update_id 중복 처리 방지
+ *   3) chat.id 가 TELEGRAM_CHAT_ID 목록에 있는지 확인 — 없으면 조용히 무시
+ *      (목록이 비어 있을 때만 /myid·등록 안내로 그 사람 자신의 chat_id 를 돌려줌)
+ *   4) /myid · /clear · /help 같은 명령 처리
+ *   5) 그 밖의 텍스트 → converse_() (웹챗과 같은 Gemini + 도구 루프)
+ *   6) 답을 4000자 이하로 나눠 sendMessage (parse_mode 없이 plain text)
+ *   7) 최근 10턴을 chat_id 별 CacheService 에 남겨 연속 대화 유지
+ * ========================================================================== */
+
+/** 텔레그램 웹훅 업데이트인지 판별합니다. */
+function isTelegramUpdate_(body) {
+  if (!body || typeof body !== 'object') return false;
+  var msg = body.message || body.edited_message;
+  if (!msg || !msg.chat) return false;
+  return msg.chat.id !== undefined && msg.chat.id !== null;
+}
+
+function handleTelegramUpdate_(update, e) {
+  var token = String(PROPS.getProperty('TELEGRAM_BOT_TOKEN') || '').trim();
+  if (!token) {
+    Logger.log('텔레그램: TELEGRAM_BOT_TOKEN 이 없어 업데이트를 무시했습니다.');
+    return;
+  }
+
+  // 웹훅 위조 방지(선택). 설정했으면 헤더가 정확히 같아야 처리합니다.
+  var secret = String(PROPS.getProperty('TELEGRAM_WEBHOOK_SECRET') || '').trim();
+  if (secret) {
+    var got = telegramSecretFromRequest_(e);
+    if (!got || !safeEqual_(got, secret)) {
+      Logger.log('텔레그램: 웹훅 비밀 토큰이 일치하지 않아 무시했습니다.');
+      return;
+    }
+  }
+
+  // 같은 update 가 두 번 와도 일정·할 일이 두 번 추가되지 않게 합니다.
+  if (!consumeTelegramUpdate_(update.update_id)) {
+    Logger.log('텔레그램: 이미 처리한 update_id — 건너뜁니다.');
+    return;
+  }
+
+  var msg = update.message || update.edited_message;
+  var chatId = String(msg.chat.id);
+  var text = typeof msg.text === 'string' ? msg.text : '';
+  var trimmed = text.trim();
+  var command = trimmed.toLowerCase().replace(/@[a-z0-9_]+$/, '');
+
+  var allowed = allowedChatIds_();
+  var isAllowed = allowed.length > 0 && allowed.indexOf(chatId) >= 0;
+
+  // 허용 목록에 없는 chat: /myid 로 self id 를 확인하는 경우 말고는 아무 응답도 하지 않습니다.
+  if (!isAllowed && allowed.length > 0) {
+    Logger.log('텔레그램: 허용되지 않은 chat(' + maskChatId_(chatId) + ') — 무시했습니다.');
+    return;
+  }
+
+  if (command === '/myid' || command === '/id') {
+    // allowed.length === 0 이면 본인 확인용, 아니면 허용된 사용자용.
+    sendTelegramMessage_(token, chatId, 'chat_id: ' + chatId);
+    return;
+  }
+
+  if (!isAllowed) {
+    // 목록이 비어 있는 상태에서 일반 메시지를 보낸 경우 — AI 는 호출하지 않고 등록 안내만 합니다.
+    sendTelegramMessage_(token, chatId,
+      'chat_id: ' + chatId + '\n' +
+      '이 대화는 아직 등록되지 않았습니다. Apps Script 스크립트 속성 TELEGRAM_CHAT_ID 에 위 값을 넣으면 답장을 시작합니다.');
+    return;
+  }
+
+  if (command === '/clear' || command === '/reset') {
+    telegramHistoryClear_(chatId);
+    sendTelegramMessage_(token, chatId, '대화 기억을 지웠습니다.');
+    return;
+  }
+
+  if (command === '/start' || command === '/help' || command === '/도움말') {
+    sendTelegramMessage_(token, chatId, telegramHelpText_());
+    return;
+  }
+
+  if (!trimmed) {
+    sendTelegramMessage_(token, chatId, '텍스트 메시지로 물어봐 주세요. 사진·파일은 아직 읽지 못합니다.');
+    return;
+  }
+
+  var question = trimmed.slice(0, 4000);
+  sendTelegramTyping_(token, chatId);
+
+  var history = telegramHistoryGet_(chatId);
+  var result;
+  try {
+    result = converse_(question, history);
+  } catch (err) {
+    Logger.log('텔레그램 답변 실패: ' + errText_(err));
+    sendTelegramMessage_(token, chatId, '처리하지 못했습니다: ' + errText_(err).slice(0, 300));
+    return;
+  }
+
+  var reply = String((result && result.text) || '').trim() || '답변을 만들지 못했습니다. 다시 한 번 물어봐 주세요.';
+  sendTelegramMessage_(token, chatId, reply);
+  telegramHistoryAppend_(chatId, question, reply);
+}
+
+function telegramHelpText_() {
+  return [
+    '개인 비서 봇입니다. 그냥 말을 걸면 캘린더·할 일·시트·메일·노션을 실제로 확인해 답합니다.',
+    '',
+    '/myid — 이 대화의 chat_id 확인',
+    '/clear — 대화 기억 지우기',
+    '/help — 이 안내',
+    '',
+    '할 수 있는 일: 일정 조회·추가, 할 일 조회·추가, 시트 읽기·행 추가, 메일 검색, 노션 검색',
+    '삭제·메일 발송처럼 되돌리기 어려운 동작은 하지 않습니다.'
+  ].join('\n');
+}
+
+/** 스크립트 속성 TELEGRAM_CHAT_ID — 쉼표·공백·세미콜론 구분 모두 허용. */
+function allowedChatIds_() {
+  var raw = String(PROPS.getProperty('TELEGRAM_CHAT_ID') || '');
+  return raw.split(/[,\s;]+/).map(function (v) { return v.trim(); }).filter(function (v) { return !!v; });
+}
+
+function telegramSecretFromRequest_(e) {
+  var h = (e && e.header) || {};
+  for (var k in h) {
+    if (String(k).toLowerCase() === 'x-telegram-bot-api-secret-token') return String(h[k] || '');
+  }
+  return '';
+}
+
+/** true = 처음 보는 update (처리 진행), false = 이미 처리함. */
+function consumeTelegramUpdate_(updateId) {
+  if (updateId === undefined || updateId === null) return true;
+  try {
+    var cache = CacheService.getScriptCache();
+    var key = 'tg_upd_' + String(updateId);
+    if (cache.get(key)) return false;
+    cache.put(key, '1', 900);
+  } catch (e) {
+    Logger.log('텔레그램: update 중복 확인을 건너뜁니다 — ' + errText_(e));
+  }
+  return true;
+}
+
+function telegramApi_(token, method, payload) {
+  var res = UrlFetchApp.fetch(TG_API + token + '/' + method, {
+    method: 'post',
+    contentType: 'application/json',
+    payload: JSON.stringify(payload || {}),
+    muteHttpExceptions: true
+  });
+  var code = res.getResponseCode();
+  var text = res.getContentText();
+  var data = null;
+  try { data = JSON.parse(text); } catch (parseErr) { data = null; }
+
+  if (code !== 200 || !data || data.ok !== true) {
+    throw new Error('Telegram ' + method + ' 오류 ' + code + ': ' + String(text).slice(0, 200));
+  }
+  return data.result;
+}
+
+/** 답장을 4000자 이하로 나눠 보냅니다. parse_mode 를 쓰지 않아 마크다운 오류가 없습니다. */
+function sendTelegramMessage_(token, chatId, text) {
+  var body = String(text || '').trim();
+  if (!body) return 0;
+
+  var chunks = splitTelegramText_(body, TG_MAX_LEN);
+  var sent = 0;
+  for (var i = 0; i < chunks.length; i++) {
+    try {
+      telegramApi_(token, 'sendMessage', {
+        chat_id: chatId,
+        text: chunks[i],
+        disable_web_page_preview: true
+      });
+      sent++;
+    } catch (e) {
+      Logger.log('텔레그램 전송 실패(' + (i + 1) + '/' + chunks.length + '): ' + errText_(e));
+    }
+  }
+  return sent;
+}
+
+function sendTelegramTyping_(token, chatId) {
+  try {
+    telegramApi_(token, 'sendChatAction', { chat_id: chatId, action: 'typing' });
+  } catch (e) {
+    Logger.log('텔레그램 typing 표시 실패: ' + errText_(e));
+  }
+}
+
+/** 줄바꿈 우선, 그다음 공백에서 자릅니다. 서로게이트 쌍(이모지)이 갈라지지 않게 보정합니다. */
+function splitTelegramText_(text, limit) {
+  var s = String(text || '').replace(/\r\n/g, '\n');
+  if (!s) return [];
+
+  var out = [];
+  while (s.length > limit) {
+    var cut = s.lastIndexOf('\n', limit);
+    if (cut < limit * 0.5) cut = s.lastIndexOf(' ', limit);
+    if (cut < limit * 0.5) cut = limit;
+    if (cut > 0 && /[\uD800-\uDBFF]/.test(s.charAt(cut - 1))) cut -= 1;
+    var piece = s.slice(0, cut).replace(/\s+$/, '');
+    if (piece) out.push(piece);
+    s = s.slice(cut).replace(/^\s+/, '');
+  }
+  if (s) out.push(s);
+  return out;
+}
+
+/* ── 대화 기억(chat_id 별, CacheService) ───────────────────────────── */
+
+function telegramHistoryKey_(chatId) {
+  return 'tg_hist_' + String(chatId).replace(/[^0-9-]/g, '');
+}
+
+function telegramHistoryGet_(chatId) {
+  try {
+    var raw = CacheService.getScriptCache().get(telegramHistoryKey_(chatId));
+    if (!raw) return [];
+    var arr = JSON.parse(raw);
+    return Array.isArray(arr) ? arr : [];
+  } catch (e) {
+    return [];
+  }
+}
+
+function telegramHistoryAppend_(chatId, userText, replyText) {
+  var lock = LockService.getScriptLock();
+  var locked = false;
+  try { locked = lock.tryLock(5000); } catch (e) { locked = false; }
+
+  try {
+    var arr = telegramHistoryGet_(chatId);
+    arr.push({ role: 'user', text: String(userText).slice(0, TG_KEEP_CHARS) });
+    arr.push({ role: 'assistant', text: String(replyText).slice(0, TG_KEEP_CHARS) });
+    var max = TG_HISTORY_TURNS * 2;
+    if (arr.length > max) arr = arr.slice(arr.length - max);
+    CacheService.getScriptCache().put(telegramHistoryKey_(chatId), JSON.stringify(arr), TG_HISTORY_TTL);
+  } catch (e) {
+    Logger.log('텔레그램 기억 저장 실패: ' + errText_(e));
+  } finally {
+    if (locked) { try { lock.releaseLock(); } catch (e2) { /* 무시 */ } }
+  }
+}
+
+function telegramHistoryClear_(chatId) {
+  try {
+    CacheService.getScriptCache().remove(telegramHistoryKey_(chatId));
+  } catch (e) {
+    Logger.log('텔레그램 기억 삭제 실패: ' + errText_(e));
+  }
+}
+
+/* ── 설정용 1회 실행 함수 ─────────────────────────────────────────── */
+
+/** 웹 앱 URL 로 setWebhook 을 호출합니다. 배포 후 편집기에서 한 번 실행하세요. */
+function setTelegramWebhook() {
+  var token = String(PROPS.getProperty('TELEGRAM_BOT_TOKEN') || '').trim();
+  if (!token) {
+    Logger.log('실패: 스크립트 속성 TELEGRAM_BOT_TOKEN 이 없습니다. @BotFather 에서 발급한 토큰을 먼저 등록하세요.');
+    return;
+  }
+
+  var url = '';
+  try { url = ScriptApp.getService().getUrl() || ''; } catch (e) { url = ''; }
+  if (!url || url.indexOf('/exec') < 0) {
+    Logger.log('실패: 웹 앱 주소를 얻지 못했습니다. [배포] → 새 배포 → 웹 앱(실행: 나 / 액세스: 모든 사용자)으로 배포한 뒤 다시 실행하세요.');
+    return;
+  }
+
+  var payload = {
+    url: url,
+    allowed_updates: ['message', 'edited_message'],
+    drop_pending_updates: false
+  };
+  var secret = String(PROPS.getProperty('TELEGRAM_WEBHOOK_SECRET') || '').trim();
+  if (secret) payload.secret_token = secret;
+
+  try {
+    telegramApi_(token, 'setWebhook', payload);
+    Logger.log('웹훅 등록 성공 — ' + url + (secret ? ' (secret_token 사용)' : ' (secret_token 없음 — 선택 사항)'));
+  } catch (e) {
+    Logger.log('웹훅 등록 실패: ' + errText_(e));
+    return;
+  }
+
+  Logger.log('이제 봇에게 /myid 를 보내 chat_id 를 확인하고 TELEGRAM_CHAT_ID 에 등록하세요.');
+  telegramWebhookInfo();
+}
+
+/** 현재 웹훅 상태를 실행 로그에 찍습니다. */
+function telegramWebhookInfo() {
+  var token = String(PROPS.getProperty('TELEGRAM_BOT_TOKEN') || '').trim();
+  if (!token) { Logger.log('TELEGRAM_BOT_TOKEN 이 없어 웹훅 정보를 볼 수 없습니다.'); return; }
+
+  try {
+    var info = telegramApi_(token, 'getWebhookInfo', {});
+    Logger.log('웹훅 URL: ' + (info.url || '(없음 — setTelegramWebhook() 를 실행하세요)'));
+    Logger.log('대기 중 업데이트: ' + (info.pending_update_count || 0) + '건');
+    if (info.last_error_message) {
+      Logger.log('마지막 웹훅 오류: ' + info.last_error_message);
+    }
+  } catch (e) {
+    Logger.log('웹훅 정보 조회 실패: ' + errText_(e));
+  }
+}
+
+/** TELEGRAM_CHAT_ID 로 짧은 시험 메시지를 보냅니다. */
+function sendTelegramTest() {
+  var token = String(PROPS.getProperty('TELEGRAM_BOT_TOKEN') || '').trim();
+  if (!token) { Logger.log('실패: TELEGRAM_BOT_TOKEN 이 없습니다.'); return; }
+
+  var ids = allowedChatIds_();
+  if (!ids.length) {
+    Logger.log('실패: TELEGRAM_CHAT_ID 가 비어 있습니다. 봇에게 /myid 를 보내 본인 id를 확인한 뒤 등록하세요.');
+    return;
+  }
+
+  var stamp = fmt_(new Date(), 'yyyy-MM-dd HH:mm');
+  ids.forEach(function (id) {
+    var sent = sendTelegramMessage_(token, id,
+      '연결 확인 — ' + stamp + '\n이 봇은 개인 비서입니다. 말을 걸면 캘린더·할 일·시트·메일을 확인해 답합니다.');
+    if (sent > 0) Logger.log('전송 성공: ' + maskChatId_(id));
+    else Logger.log('전송 실패: ' + maskChatId_(id) + ' — 위의 전송 오류 로그를 확인하세요.');
+  });
+}
+
+function errText_(err) {
+  return String((err && err.message) || err);
+}
+
+/** 로그에 chat_id 를 통째로 남기지 않기 위한 가림 처리. */
+function maskChatId_(id) {
+  var s = String(id || '');
+  if (s.length <= 4) return '…';
+  return s.slice(0, 3) + '…' + s.slice(-2);
 }
 
 /* ==========================================================================
@@ -716,6 +1106,23 @@ function setupCheck() {
   Logger.log('SHARED_SHEET_ID: ' + (PROPS.getProperty('SHARED_SHEET_ID') ? '설정됨' : '없음 — 선택'));
   Logger.log('NOTION_TOKEN: ' + (PROPS.getProperty('NOTION_TOKEN') ? '설정됨' : '없음 — 선택'));
   Logger.log('Tasks 고급 서비스: ' + (typeof Tasks !== 'undefined' && Tasks.Tasks ? '사용 가능' : '없음 — 할 일 기능에 필요'));
+
+  var tgToken = String(PROPS.getProperty('TELEGRAM_BOT_TOKEN') || '').trim();
+  var tgIds = allowedChatIds_();
+  Logger.log('TELEGRAM_BOT_TOKEN: ' + (tgToken ? '설정됨' : '없음 — 텔레그램으로 쓰려면 필수'));
+  Logger.log('TELEGRAM_CHAT_ID: ' + (tgIds.length
+    ? '설정됨 (' + tgIds.length + '개: ' + tgIds.map(maskChatId_).join(', ') + ')'
+    : '없음 — 봇에게 /myid 를 보내 확인한 뒤 등록'));
+  Logger.log('TELEGRAM_WEBHOOK_SECRET: ' + (PROPS.getProperty('TELEGRAM_WEBHOOK_SECRET') ? '설정됨' : '없음 — 선택(권장)'));
+  if (tgToken) {
+    try {
+      var me = telegramApi_(tgToken, 'getMe', {});
+      Logger.log('텔레그램 봇 연결: OK — @' + me.username);
+    } catch (e) {
+      Logger.log('텔레그램 봇 연결 실패: ' + errText_(e));
+    }
+    telegramWebhookInfo();
+  }
 
   var key = PROPS.getProperty('GEMINI_API_KEY');
   if (key) {
