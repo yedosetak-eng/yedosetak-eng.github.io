@@ -59,6 +59,9 @@
  *  · ACCESS_PIN 이 틀리면 Gemini 호출 전에 즉시 거절합니다.
  *  · Apps Script 웹 앱은 HTTP 상태 코드를 지정할 수 없어 항상 200 으로 응답합니다.
  *    따라서 결과 JSON 안에 ok / status 를 담고, 클라이언트가 그것으로 판단합니다.
+ *  · 텔레그램 응답은 반드시 HtmlService 로 돌려줍니다(telegramOk_). ContentService 응답은
+ *    googleusercontent.com 으로 302 되고, 텔레그램은 리다이렉트를 따라가지 않아
+ *    "Wrong response from the webhook: 302 Moved Temporarily" 로 계속 재전송됩니다.
  *  · 도구는 "조회"와 "추가"만 있습니다. 삭제·메일 발송 같은 되돌리기 어려운 동작은
  *    의도적으로 넣지 않았습니다.
  *  · 텔레그램은 웹 앱 주소를 아는 사람이면 누구나 호출할 수 있으므로, chat_id 허용 목록이
@@ -105,7 +108,6 @@ function doPost(e) {
     }
 
     // ── 텔레그램 웹훅 분기 ─────────────────────────────────────────
-    // 텔레그램은 응답 본문을 보지 않고 200 만 확인합니다(App Script 는 항상 200).
     // PIN 대신 chat_id 허용 목록으로 인증하므로 PIN 검증보다 먼저 처리합니다.
     if (isTelegramUpdate_(body)) {
       try {
@@ -113,7 +115,7 @@ function doPost(e) {
       } catch (tgErr) {
         Logger.log('텔레그램 처리 오류: ' + errText_(tgErr));
       }
-      return jsonOut_({ ok: true });
+      return telegramOk_();
     }
 
     var expectedPin = PROPS.getProperty('ACCESS_PIN');
@@ -148,6 +150,24 @@ function doPost(e) {
 function jsonOut_(obj) {
   return ContentService.createTextOutput(JSON.stringify(obj))
     .setMimeType(ContentService.MimeType.JSON);
+}
+
+/**
+ * 텔레그램 웹훅에 돌려줄 200 응답.
+ *
+ * ContentService 응답은 script.google.com 이 아니라 script.googleusercontent.com 일회용 주소로
+ * 302 리다이렉트되고, 텔레그램은 리다이렉트를 따라가지 않습니다(그러면
+ * getWebhookInfo 에 "Wrong response from the webhook: 302 Moved Temporarily" 가 남고
+ * 같은 업데이트를 계속 재전송합니다). HtmlService 응답은 웹 앱 자체 페이지로 바로 나가므로
+ * 텔레그램이 200 으로 받습니다. 웹챗(브라우저 fetch)은 리다이렉트를 따라가므로 그대로 JSON 을 씁니다.
+ */
+function telegramOk_() {
+  try {
+    return HtmlService.createHtmlOutput('OK');
+  } catch (e) {
+    // HtmlService 를 쓸 수 없는 환경이면 형태라도 돌려줍니다.
+    return ContentService.createTextOutput('OK');
+  }
 }
 
 /** 길이·내용 유출을 줄이는 단순 비교(상수 시간에 가깝게). */
