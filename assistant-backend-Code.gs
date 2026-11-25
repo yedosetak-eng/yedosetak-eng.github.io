@@ -446,7 +446,12 @@ function setTelegramWebhook() {
 
   try {
     telegramApi_(token, 'setWebhook', payload);
-    Logger.log('웹훅 등록 성공 — ' + url + (secret ? ' (secret_token 사용)' : ' (secret_token 없음 — 선택 사항)'));
+    Logger.log('웹훅 등록 성공 — ' + url);
+    if (secret) {
+      Logger.log('  secret_token 사용: 예, X-Telegram-Bot-Api-Secret-Token 검증이 켜졌습니다.');
+    } else {
+      Logger.log('  secret_token 사용: 아니오 — 웹 앱 주소를 아는 제3자가 가짜 업데이트를 보낼 수 있으니, TELEGRAM_WEBHOOK_SECRET 등록을 권합니다.');
+    }
   } catch (e) {
     Logger.log('웹훅 등록 실패: ' + errText_(e));
     return;
